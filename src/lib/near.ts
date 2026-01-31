@@ -1,62 +1,8 @@
-import { setupWalletSelector, Wallet, WalletSelector } from '@near-wallet-selector/core';
-import { setupMyNearWallet } from '@near-wallet-selector/my-near-wallet';
-import { setupHereWallet } from '@near-wallet-selector/here-wallet';
-
 const NETWORK_ID = 'mainnet';
 const CONTRACT_ID = 'whisper.kaizap.near';
 const RPC_URL = `https://rpc.${NETWORK_ID}.near.org`;
 
-let selector: WalletSelector | null = null;
-let wallet: Wallet | null = null;
-
-export async function initWalletSelector(): Promise<WalletSelector> {
-  if (selector) return selector;
-  
-  selector = await setupWalletSelector({
-    network: NETWORK_ID,
-    modules: [
-      setupMyNearWallet(),
-      setupHereWallet(),
-    ],
-  });
-  
-  return selector;
-}
-
-export async function getWallet(): Promise<Wallet | null> {
-  const sel = await initWalletSelector();
-  const state = sel.store.getState();
-  
-  if (state.accounts.length === 0) return null;
-  
-  if (!wallet) {
-    wallet = await sel.wallet();
-  }
-  return wallet;
-}
-
-export async function signIn(): Promise<void> {
-  const sel = await initWalletSelector();
-  const myNearWallet = await sel.wallet('my-near-wallet');
-  await myNearWallet.signIn({ contractId: CONTRACT_ID } as any);
-}
-
-export async function signOut(): Promise<void> {
-  const w = await getWallet();
-  if (w) {
-    await w.signOut();
-    wallet = null;
-    window.location.reload();
-  }
-}
-
-export async function getAccountId(): Promise<string | null> {
-  const sel = await initWalletSelector();
-  const state = sel.store.getState();
-  return state.accounts[0]?.accountId || null;
-}
-
-// Direct RPC call helper
+// Direct RPC call helper for view methods
 async function viewCall<T>(methodName: string, args: object = {}): Promise<T | null> {
   try {
     const response = await fetch(RPC_URL, {
@@ -75,13 +21,13 @@ async function viewCall<T>(methodName: string, args: object = {}): Promise<T | n
         },
       }),
     });
-    
+
     const data = await response.json();
     if (data.error) {
       console.error('RPC error:', data.error);
       return null;
     }
-    
+
     const result = JSON.parse(
       new TextDecoder().decode(new Uint8Array(data.result.result))
     );
@@ -92,15 +38,18 @@ async function viewCall<T>(methodName: string, args: object = {}): Promise<T | n
   }
 }
 
+// Contract types matching lib.rs exactly
 export interface Profile {
-  public_key: string;
-  registered_at: string;
+  x25519_pubkey: string; // base64
+  key_version: number;
+  registered_at: string; // u64 as string
+  display_name: string | null;
 }
 
 export interface Stats {
-  total_profiles: string;
-  total_messages: string;
-  total_groups: string;
+  profile_count: number;
+  message_count: number;
+  owner: string;
 }
 
 // View methods (no wallet needed)
@@ -112,64 +61,66 @@ export async function getStats(): Promise<Stats | null> {
   return viewCall<Stats>('get_stats', {});
 }
 
-// Helper to create function call action
-function functionCall(methodName: string, args: object, gas: string, deposit: string) {
+// Function call action builders for HOT Kit transactions
+export function buildRegisterKeyAction(x25519Pubkey: string, displayName?: string) {
   return {
-    type: 'FunctionCall',
-    params: { methodName, args, gas, deposit },
-  } as any;
+    type: 'FunctionCall' as const,
+    params: {
+      methodName: 'register_key',
+      args: { x25519_pubkey: x25519Pubkey, display_name: displayName ?? null },
+      gas: '30000000000000',
+      deposit: '10000000000000000000000', // 0.01 NEAR storage
+    },
+  };
 }
 
-// Change methods (require wallet)
-export async function registerKey(publicKey: string): Promise<void> {
-  const w = await getWallet();
-  if (!w) throw new Error('Wallet not connected');
-  
-  const accountId = await getAccountId();
-  if (!accountId) throw new Error('No account');
-  
-  await w.signAndSendTransaction({
-    signerId: accountId,
-    receiverId: CONTRACT_ID,
-    actions: [functionCall('register_key', { public_key: publicKey }, '30000000000000', '10000000000000000000000')],
-  });
-}
-
-export async function sendMessage(
-  recipient: string,
-  encryptedContent: string,
+export function buildSendMessageAction(
+  to: string,
+  encryptedBody: string,
   nonce: string,
-): Promise<void> {
-  const w = await getWallet();
-  if (!w) throw new Error('Wallet not connected');
-  
-  const accountId = await getAccountId();
-  if (!accountId) throw new Error('No account');
-  
-  await w.signAndSendTransaction({
-    signerId: accountId,
-    receiverId: CONTRACT_ID,
-    actions: [functionCall('send_message', { recipient, encrypted_content: encryptedContent, nonce }, '30000000000000', '0')],
-  });
+  recipientKeyVersion: number,
+  replyTo?: string,
+) {
+  return {
+    type: 'FunctionCall' as const,
+    params: {
+      methodName: 'send_message',
+      args: {
+        to,
+        encrypted_body: encryptedBody,
+        nonce,
+        recipient_key_version: recipientKeyVersion,
+        reply_to: replyTo ?? null,
+      },
+      gas: '30000000000000',
+      deposit: '0',
+    },
+  };
 }
 
-export async function sendMessageWithPayment(
-  recipient: string,
-  encryptedContent: string,
+export function buildSendMessageWithPaymentAction(
+  to: string,
+  encryptedBody: string,
   nonce: string,
-  amount: string, // in yoctoNEAR
-): Promise<void> {
-  const w = await getWallet();
-  if (!w) throw new Error('Wallet not connected');
-  
-  const accountId = await getAccountId();
-  if (!accountId) throw new Error('No account');
-  
-  await w.signAndSendTransaction({
-    signerId: accountId,
-    receiverId: CONTRACT_ID,
-    actions: [functionCall('send_message_with_payment', { recipient, encrypted_content: encryptedContent, nonce }, '30000000000000', amount)],
-  });
+  recipientKeyVersion: number,
+  amount: string, // yoctoNEAR
+  replyTo?: string,
+) {
+  return {
+    type: 'FunctionCall' as const,
+    params: {
+      methodName: 'send_message_with_payment',
+      args: {
+        to,
+        encrypted_body: encryptedBody,
+        nonce,
+        recipient_key_version: recipientKeyVersion,
+        reply_to: replyTo ?? null,
+      },
+      gas: '30000000000000',
+      deposit: amount,
+    },
+  };
 }
 
-export { CONTRACT_ID, NETWORK_ID };
+export { CONTRACT_ID, NETWORK_ID, RPC_URL };

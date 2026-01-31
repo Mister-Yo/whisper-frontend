@@ -1,51 +1,71 @@
-// Indexer API client for fetching messages
-// TODO: Replace with actual indexer URL when deployed
+const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || 'http://localhost:3002';
 
-const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || 'http://localhost:3001';
-
-export interface Message {
-  id: string;
+// Types matching contract NEP-297 events
+export interface IndexedMessage {
+  id: number;
+  tx_hash: string;
+  block_height: number;
+  timestamp_ns: string;
+  event_type: string; // message_sent | message_sent_with_payment
   sender: string;
   recipient: string;
-  encrypted_content: string;
+  encrypted_body: string;
   nonce: string;
-  attached_amount: string;
-  timestamp: string;
-  block_height: string;
+  recipient_key_version: number;
+  reply_to: string | null;
+  amount: string | null; // yoctoNEAR, present for payment messages
 }
 
-export interface Profile {
+export interface Conversation {
+  peer: string;
+  last_message_at: string;
+  last_message_preview: string; // encrypted, just for ordering
+  unread_count: number;
+}
+
+export interface IndexedProfile {
   account_id: string;
-  public_key: string;
+  x25519_pubkey: string;
+  key_version: number;
+  display_name: string | null;
   registered_at: string;
 }
 
-export async function getMessages(accountId: string): Promise<Message[]> {
+// Get messages between current user and a specific peer
+export async function getMessages(
+  account: string,
+  peer?: string,
+  after?: number,
+  limit = 50,
+): Promise<IndexedMessage[]> {
   try {
-    const response = await fetch(`${INDEXER_URL}/api/messages?recipient=${accountId}`);
+    const params = new URLSearchParams({ account, limit: String(limit) });
+    if (peer) params.set('with', peer);
+    if (after) params.set('after', String(after));
+    const response = await fetch(`${INDEXER_URL}/messages?${params}`);
     if (!response.ok) return [];
-    const data = await response.json();
-    return data.messages || [];
+    return await response.json();
   } catch {
-    console.warn('Indexer not available, messages will be empty');
+    console.warn('Indexer not available');
     return [];
   }
 }
 
-export async function getSentMessages(accountId: string): Promise<Message[]> {
+// Get list of conversations for an account
+export async function getConversations(account: string): Promise<Conversation[]> {
   try {
-    const response = await fetch(`${INDEXER_URL}/api/messages?sender=${accountId}`);
+    const response = await fetch(`${INDEXER_URL}/messages/conversations?account=${account}`);
     if (!response.ok) return [];
-    const data = await response.json();
-    return data.messages || [];
+    return await response.json();
   } catch {
     return [];
   }
 }
 
-export async function getProfile(accountId: string): Promise<Profile | null> {
+// Get profile from indexer
+export async function getIndexedProfile(accountId: string): Promise<IndexedProfile | null> {
   try {
-    const response = await fetch(`${INDEXER_URL}/api/profiles/${accountId}`);
+    const response = await fetch(`${INDEXER_URL}/profiles/${accountId}`);
     if (!response.ok) return null;
     return await response.json();
   } catch {
@@ -53,13 +73,24 @@ export async function getProfile(accountId: string): Promise<Profile | null> {
   }
 }
 
-export async function searchProfiles(query: string): Promise<Profile[]> {
+// Search profiles
+export async function searchProfiles(query: string): Promise<IndexedProfile[]> {
   try {
-    const response = await fetch(`${INDEXER_URL}/api/profiles?search=${encodeURIComponent(query)}`);
+    const response = await fetch(`${INDEXER_URL}/profiles/search?q=${encodeURIComponent(query)}`);
     if (!response.ok) return [];
-    const data = await response.json();
-    return data.profiles || [];
+    return await response.json();
   } catch {
     return [];
+  }
+}
+
+// Health check
+export async function getIndexerHealth(): Promise<{ ok: boolean; lastBlock?: number } | null> {
+  try {
+    const response = await fetch(`${INDEXER_URL}/health`);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
   }
 }

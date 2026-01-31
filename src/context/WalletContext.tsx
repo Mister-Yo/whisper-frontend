@@ -1,19 +1,15 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { ensureHotConnector, getHotConnector, getNearAccountId, callContract } from '@/lib/hot';
+import { getProfile, getStats, Profile, Stats } from '@/lib/near';
 import {
-  initWalletSelector,
-  signIn as nearSignIn,
-  signOut as nearSignOut,
-  getAccountId,
-  getProfile,
-  registerKey as nearRegisterKey,
-  sendMessage as nearSendMessage,
-  getStats,
-  Profile,
-  Stats,
-} from '@/lib/near';
-import { getOrCreateKeyPair, publicKeyToBase58, KeyPair, encryptMessage, base58ToPublicKey } from '@/lib/crypto';
+  getOrCreateKeyPair,
+  publicKeyToBase64,
+  base64ToPublicKey,
+  KeyPair,
+  encryptMessage,
+} from '@/lib/crypto';
 
 interface WalletContextType {
   accountId: string | null;
@@ -21,12 +17,19 @@ interface WalletContextType {
   isLoading: boolean;
   keyPair: KeyPair | null;
   isRegistered: boolean;
+  profile: Profile | null;
   stats: Stats | null;
   connect: () => void;
   disconnect: () => void;
-  registerKey: () => Promise<void>;
-  sendMessage: (recipient: string, message: string) => Promise<void>;
+  registerKey: (displayName?: string) => Promise<void>;
+  sendMessage: (
+    recipient: string,
+    message: string,
+    recipientKeyVersion?: number,
+    replyTo?: string,
+  ) => Promise<void>;
   lookupProfile: (accountId: string) => Promise<Profile | null>;
+  refreshProfile: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType>({
@@ -35,12 +38,14 @@ const WalletContext = createContext<WalletContextType>({
   isLoading: true,
   keyPair: null,
   isRegistered: false,
+  profile: null,
   stats: null,
   connect: () => {},
   disconnect: () => {},
   registerKey: async () => {},
   sendMessage: async () => {},
   lookupProfile: async () => null,
+  refreshProfile: async () => {},
 });
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
@@ -48,70 +53,130 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [keyPair, setKeyPair] = useState<KeyPair | null>(null);
   const [isRegistered, setIsRegistered] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
 
+  // Initialize HOT connector on mount and subscribe to wallet events
   useEffect(() => {
-    async function init() {
+    let mounted = true;
+
+    (async () => {
       try {
-        await initWalletSelector();
-        const id = await getAccountId();
-        setAccountId(id);
-        
-        if (id) {
-          // Get or create local keypair
-          const kp = getOrCreateKeyPair();
-          setKeyPair(kp);
-          
-          // Check if registered on contract
-          const profile = await getProfile(id);
-          setIsRegistered(!!profile);
+        const hot = await ensureHotConnector();
+
+        // Subscribe to connect/disconnect
+        hot.onConnect(() => {
+          if (mounted) setAccountId(getNearAccountId());
+        });
+        hot.onDisconnect(() => {
+          if (mounted) setAccountId(null);
+        });
+
+        // Check if already connected (session restore)
+        // Wait a bit for connectors to restore sessions
+        await new Promise((r) => setTimeout(r, 1000));
+        if (mounted) {
+          setAccountId(getNearAccountId());
+          setIsLoading(false);
         }
-        
-        // Fetch stats
-        const s = await getStats();
-        setStats(s);
-      } catch (error) {
-        console.error('Failed to initialize NEAR:', error);
-      } finally {
-        setIsLoading(false);
+      } catch (e) {
+        console.error('Failed to initialize HOT connector:', e);
+        if (mounted) setIsLoading(false);
       }
+    })();
+
+    return () => { mounted = false; };
+  }, []);
+
+  // When account changes, load keypair and check registration
+  useEffect(() => {
+    if (!accountId) {
+      setKeyPair(null);
+      setIsRegistered(false);
+      setProfile(null);
+      return;
     }
-    init();
+
+    const kp = getOrCreateKeyPair();
+    setKeyPair(kp);
+
+    getProfile(accountId).then((p) => {
+      setProfile(p);
+      setIsRegistered(!!p);
+    });
+  }, [accountId]);
+
+  // Fetch global stats once
+  useEffect(() => {
+    getStats().then(setStats);
   }, []);
 
-  const connect = useCallback(() => {
-    nearSignIn();
+  const connect = useCallback(async () => {
+    const hot = await ensureHotConnector();
+    hot.connect();
   }, []);
 
-  const disconnect = useCallback(() => {
-    nearSignOut();
-    setAccountId(null);
-    setIsRegistered(false);
+  const disconnect = useCallback(async () => {
+    const hot = getHotConnector();
+    const nearWallet = hot?.near;
+    if (hot && nearWallet) hot.disconnect(nearWallet);
   }, []);
 
-  const registerKey = useCallback(async () => {
+  const refreshProfile = useCallback(async () => {
+    if (!accountId) return;
+    const p = await getProfile(accountId);
+    setProfile(p);
+    setIsRegistered(!!p);
+  }, [accountId]);
+
+  const registerKey = useCallback(async (displayName?: string) => {
     if (!keyPair) throw new Error('No keypair');
-    
-    const publicKeyBase58 = publicKeyToBase58(keyPair.publicKey);
-    await nearRegisterKey(publicKeyBase58);
-    setIsRegistered(true);
+
+    const pubkeyBase64 = publicKeyToBase64(keyPair.publicKey);
+    await callContract(
+      'register_key',
+      { x25519_pubkey: pubkeyBase64, display_name: displayName ?? null },
+      '30000000000000',
+      '10000000000000000000000',
+    );
+
+    if (accountId) {
+      const p = await getProfile(accountId);
+      setProfile(p);
+      setIsRegistered(!!p);
+    }
+  }, [keyPair, accountId]);
+
+  const sendMessageFn = useCallback(async (
+    recipient: string,
+    message: string,
+    recipientKeyVersion?: number,
+    replyTo?: string,
+  ) => {
+    if (!keyPair) throw new Error('No keypair');
+
+    const recipientProfile = await getProfile(recipient);
+    if (!recipientProfile) throw new Error('Recipient not registered on Whisper');
+
+    const recipientPubkey = base64ToPublicKey(recipientProfile.x25519_pubkey);
+    const { encrypted, nonce } = encryptMessage(message, recipientPubkey, keyPair.secretKey);
+
+    await callContract(
+      'send_message',
+      {
+        to: recipient,
+        encrypted_body: encrypted,
+        nonce,
+        recipient_key_version: recipientKeyVersion ?? recipientProfile.key_version,
+        reply_to: replyTo ?? null,
+      },
+      '30000000000000',
+      '0',
+    );
   }, [keyPair]);
 
-  const sendMessageFn = useCallback(async (recipient: string, message: string) => {
-    if (!keyPair) throw new Error('No keypair');
-    
-    // Get recipient's public key
-    const profile = await getProfile(recipient);
-    if (!profile) throw new Error('Recipient not registered on Whisper');
-    
-    const recipientPublicKey = base58ToPublicKey(profile.public_key);
-    const { encrypted, nonce } = encryptMessage(message, recipientPublicKey, keyPair.secretKey);
-    
-    await nearSendMessage(recipient, encrypted, nonce);
-  }, [keyPair]);
-
-  const lookupProfile = useCallback(async (accountId: string) => {
-    return getProfile(accountId);
+  const lookupProfile = useCallback(async (id: string) => {
+    return getProfile(id);
   }, []);
 
   return (
@@ -122,12 +187,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         keyPair,
         isRegistered,
+        profile,
         stats,
         connect,
         disconnect,
         registerKey,
         sendMessage: sendMessageFn,
         lookupProfile,
+        refreshProfile,
       }}
     >
       {children}

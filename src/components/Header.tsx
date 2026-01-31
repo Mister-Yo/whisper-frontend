@@ -3,33 +3,46 @@
 import { useWallet } from '@/context/WalletContext';
 
 export function Header() {
-  const { accountId, isSignedIn, isLoading, connect, disconnect, isRegistered } = useWallet();
+  const { accountId, isSignedIn, isLoading, connect, disconnect, isRegistered, profile, stats } = useWallet();
 
   return (
-    <header className="border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm sticky top-0 z-50">
-      <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🔐</span>
-          <h1 className="text-xl font-bold text-white">Whisper Protocol</h1>
-          <span className="text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded">NEAR</span>
+    <header className="h-16 border-b border-gray-800 bg-gray-950 sticky top-0 z-50">
+      <div className="h-full px-4 flex items-center justify-between">
+        {/* Logo */}
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center">
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <span className="text-base font-bold text-white">Whisper</span>
+          {stats && (
+            <span className="text-xs text-gray-500 hidden sm:inline">
+              {stats.profile_count} users / {stats.message_count} msgs
+            </span>
+          )}
         </div>
-        
-        <div className="flex items-center gap-4">
+
+        {/* Right side */}
+        <div className="flex items-center gap-3">
           {isLoading ? (
-            <div className="text-gray-400">Loading...</div>
+            <div className="text-sm text-gray-500">Connecting...</div>
           ) : isSignedIn ? (
             <>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-300">{accountId}</span>
+                <span className="text-sm text-gray-300 hidden sm:inline">{accountId}</span>
+                {isRegistered && profile?.display_name && (
+                  <span className="text-xs text-gray-500 hidden lg:inline">({profile.display_name})</span>
+                )}
                 {isRegistered ? (
-                  <span className="text-xs text-green-400 bg-green-900/30 px-2 py-0.5 rounded">✓ Registered</span>
+                  <span className="w-2 h-2 bg-emerald-400 rounded-full" title="Registered" />
                 ) : (
-                  <span className="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-0.5 rounded">Not Registered</span>
+                  <span className="w-2 h-2 bg-yellow-400 rounded-full" title="Not registered" />
                 )}
               </div>
               <button
                 onClick={disconnect}
-                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white border border-gray-700 rounded-lg hover:border-gray-600 transition"
+                className="px-3 py-1.5 text-xs text-gray-400 hover:text-white border border-gray-700 rounded-lg hover:border-gray-600 transition"
               >
                 Disconnect
               </button>
@@ -37,7 +50,7 @@ export function Header() {
           ) : (
             <button
               onClick={connect}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-lg font-medium transition"
             >
               Connect Wallet
             </button>

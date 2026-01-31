@@ -1,6 +1,5 @@
 import nacl from 'tweetnacl';
 import { encodeBase64, decodeBase64, encodeUTF8, decodeUTF8 } from 'tweetnacl-util';
-import bs58 from 'bs58';
 
 const STORAGE_KEY = 'whisper_keypair';
 
@@ -51,14 +50,14 @@ export function getOrCreateKeyPair(): KeyPair {
   return keyPair;
 }
 
-// Convert public key to base58 for contract storage
-export function publicKeyToBase58(publicKey: Uint8Array): string {
-  return bs58.encode(publicKey);
+// Convert public key to base64 for contract storage (contract expects base64)
+export function publicKeyToBase64(publicKey: Uint8Array): string {
+  return encodeBase64(publicKey);
 }
 
-// Convert base58 public key back to Uint8Array
-export function base58ToPublicKey(base58: string): Uint8Array {
-  return bs58.decode(base58);
+// Convert base64 public key back to Uint8Array
+export function base64ToPublicKey(base64str: string): Uint8Array {
+  return decodeBase64(base64str);
 }
 
 // Encrypt a message for a recipient
