@@ -14,9 +14,12 @@ export function ProfileSetup() {
     setStatus('loading');
     setError('');
     try {
+      console.log('[whisper] Starting key registration...');
       await registerKey(displayName.trim() || undefined);
+      console.log('[whisper] Key registration succeeded');
       setStatus('idle');
     } catch (e: any) {
+      console.error('[whisper] Key registration failed:', e);
       setStatus('error');
       setError(e.message || 'Registration failed');
     }

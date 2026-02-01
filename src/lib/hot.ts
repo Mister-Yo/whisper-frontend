@@ -66,13 +66,21 @@ export async function callContract(
   const nearWallet = hot.near;
   if (!nearWallet) throw new Error('NEAR wallet not connected');
 
-  return nearWallet.sendTransaction({
-    receiverId: CONTRACT_ID,
-    actions: [
-      {
-        type: 'FunctionCall',
-        params: { methodName, args, gas, deposit },
-      },
-    ],
-  });
+  console.log(`[whisper] callContract: ${methodName}`, args);
+  try {
+    const result = await nearWallet.sendTransaction({
+      receiverId: CONTRACT_ID,
+      actions: [
+        {
+          type: 'FunctionCall',
+          params: { methodName, args, gas, deposit },
+        },
+      ],
+    });
+    console.log(`[whisper] callContract success:`, result);
+    return result;
+  } catch (err) {
+    console.error(`[whisper] callContract failed:`, err);
+    throw err;
+  }
 }

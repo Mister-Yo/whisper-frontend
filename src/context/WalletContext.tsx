@@ -101,8 +101,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setKeyPair(kp);
 
     getProfile(accountId).then((p) => {
+      console.log(`[whisper] Profile for ${accountId}:`, p);
       setProfile(p);
       setIsRegistered(!!p);
+    }).catch((e) => {
+      console.error(`[whisper] Failed to fetch profile:`, e);
     });
   }, [accountId]);
 
