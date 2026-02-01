@@ -119,7 +119,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const disconnect = useCallback(async () => {
     const hot = getHotConnector();
     const nearWallet = hot?.near;
-    if (hot && nearWallet) hot.disconnect(nearWallet);
+    if (hot && nearWallet) {
+      try {
+        await hot.disconnect(nearWallet);
+      } catch (e) {
+        console.error('Disconnect failed:', e);
+        // Force clear state even if HOT Kit fails
+        setAccountId(null);
+      }
+    }
   }, []);
 
   const refreshProfile = useCallback(async () => {
