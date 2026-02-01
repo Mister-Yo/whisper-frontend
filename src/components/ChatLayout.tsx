@@ -6,9 +6,10 @@ import { ContactList } from './ContactList';
 import { ChatView } from './ChatView';
 import { NewChatDialog } from './NewChatDialog';
 import { ProfileSetup } from './ProfileSetup';
+import { AccessKeyBanner } from './AccessKeyBanner';
 
 export function ChatLayout() {
-  const { accountId, isRegistered } = useWallet();
+  const { accountId, isRegistered, hasAccessKey } = useWallet();
   const [selectedPeer, setSelectedPeer] = useState<string | null>(null);
   const [showNewChat, setShowNewChat] = useState(false);
   const [mobileView, setMobileView] = useState<'contacts' | 'chat'>('contacts');
@@ -33,7 +34,11 @@ export function ChatLayout() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-64px)] overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden">
+      {/* Access key setup banner */}
+      {!hasAccessKey && <AccessKeyBanner />}
+
+      <div className="flex flex-1 overflow-hidden">
       {/* Sidebar — contacts list */}
       <div className={`w-full md:w-80 lg:w-96 border-r border-gray-800 flex flex-col ${
         mobileView === 'chat' ? 'hidden md:flex' : 'flex'
@@ -87,6 +92,7 @@ export function ChatLayout() {
           onClose={() => setShowNewChat(false)}
         />
       )}
+      </div>
     </div>
   );
 }

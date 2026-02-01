@@ -10,6 +10,10 @@
   },
   "dependencies": {
     "@hot-labs/kit": "^1.4.27",
+    "@near-js/crypto": "^2.5.1",
+    "@near-js/providers": "^2.5.1",
+    "@near-js/signers": "^2.5.1",
+    "@near-js/transactions": "^2.5.1",
     "borsh": "^2.0.0",
     "mobx": "^6.15.0",
     "mobx-react-lite": "^4.1.1",

@@ -1,6 +1,7 @@
 'use client';
 
 import { CONTRACT_ID } from './near';
+import { buildAddAccessKeyAction } from './access-key';
 
 // HotConnector type reference (avoids top-level import which breaks SSR)
 type HotConnectorType = import('@hot-labs/kit').HotConnector;
@@ -81,6 +82,30 @@ export async function callContract(
     return result;
   } catch (err) {
     console.error(`[whisper] callContract failed:`, err);
+    throw err;
+  }
+}
+
+// Helper: add a FunctionCall access key via HOT Kit (requires wallet approval)
+export async function addFunctionCallAccessKey(
+  publicKey: string,
+): Promise<string> {
+  const hot = await ensureHotConnector();
+  const nearWallet = hot.near;
+  if (!nearWallet) throw new Error('NEAR wallet not connected');
+
+  const action = buildAddAccessKeyAction(publicKey);
+
+  console.log(`[whisper] addFunctionCallAccessKey for ${publicKey}`);
+  try {
+    const result = await nearWallet.sendTransaction({
+      receiverId: nearWallet.address,
+      actions: [action],
+    });
+    console.log(`[whisper] addFunctionCallAccessKey success:`, result);
+    return result;
+  } catch (err) {
+    console.error(`[whisper] addFunctionCallAccessKey failed:`, err);
     throw err;
   }
 }
