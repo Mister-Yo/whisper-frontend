@@ -155,6 +155,9 @@ function baseDecode(value: string): Uint8Array {
 }
 
 // Build the AddKey action for HOT Kit
+// The permission must be wrapped as { functionCall: {...} } because the HOT wallet
+// internally passes it to NEAR's AccessKeyPermission Enum constructor which requires
+// exactly one key (either "functionCall" or "fullAccess").
 export function buildAddAccessKeyAction(publicKey: string, allowance = DEFAULT_ALLOWANCE) {
   return {
     type: 'AddKey' as const,
@@ -163,9 +166,11 @@ export function buildAddAccessKeyAction(publicKey: string, allowance = DEFAULT_A
       accessKey: {
         nonce: 0,
         permission: {
-          receiverId: CONTRACT_ID,
-          methodNames: ['send_message'],
-          allowance: allowance.toString(),
+          functionCall: {
+            receiverId: CONTRACT_ID,
+            methodNames: ['send_message'],
+            allowance: allowance.toString(),
+          },
         },
       },
     },

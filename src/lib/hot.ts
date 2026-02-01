@@ -100,7 +100,7 @@ export async function addFunctionCallAccessKey(
   try {
     const result = await nearWallet.sendTransaction({
       receiverId: nearWallet.address,
-      actions: [action],
+      actions: [action as any],
     });
     console.log(`[whisper] addFunctionCallAccessKey success:`, result);
     return result;
